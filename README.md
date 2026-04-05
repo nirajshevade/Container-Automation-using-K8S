@@ -23,6 +23,7 @@ docker build -t demo-app:local ./app
 docker run -p 5000:5000 demo-app:local
 ```
 
+
 Test endpoints:
 
 - `http://localhost:5000/`
