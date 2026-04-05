@@ -43,22 +43,25 @@ jobs:
         version: 'v1.30.0'
 
     - name: Configure kubeconfig
-      shell: bash
+      shell: pwsh
       run: |
-        set -euo pipefail
-        mkdir -p "$HOME/.kube"
-        SECRET='${{ secrets.KUBE_CONFIG_DATA }}'
+        $kubeDir = Join-Path $HOME ".kube"
+        New-Item -ItemType Directory -Path $kubeDir -Force | Out-Null
+        $kubeConfigPath = Join-Path $kubeDir "config"
+        $secret = "${{ secrets.KUBE_CONFIG_DATA }}"
 
         # Accept both base64-encoded kubeconfig and raw kubeconfig YAML.
-        if echo "$SECRET" | base64 -d > "$HOME/.kube/config" 2>/dev/null; then
-          echo "Using base64-decoded kubeconfig from secret."
-        else
-          printf "%s" "$SECRET" > "$HOME/.kube/config"
-          echo "Using raw kubeconfig from secret."
-        fi
+        try {
+          $bytes = [Convert]::FromBase64String($secret)
+          [IO.File]::WriteAllBytes($kubeConfigPath, $bytes)
+          Write-Host "Using base64-decoded kubeconfig from secret."
+        }
+        catch {
+          Set-Content -Path $kubeConfigPath -Value $secret -NoNewline
+          Write-Host "Using raw kubeconfig from secret."
+        }
 
-        chmod 600 "$HOME/.kube/config"
-        kubectl config get-contexts >/dev/null
+        kubectl config get-contexts | Out-Null
 
     - name: Verify cluster connectivity
       run: |
@@ -70,9 +73,10 @@ jobs:
         kubectl apply -f k8s/namespace.yaml
 
     - name: Deploy workload with current image
+      shell: pwsh
       run: |
-        IMAGE="${{ env.IMAGE_NAME }}:${{ github.sha }}"
-        sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/deployment.yaml | kubectl apply -f -
+        $image = "${{ env.IMAGE_NAME }}:${{ github.sha }}"
+        (Get-Content "k8s/deployment.yaml" -Raw).Replace("IMAGE_PLACEHOLDER", $image) | kubectl apply -f -
         kubectl apply -f k8s/service.yaml
         kubectl apply -f k8s/hpa.yaml
         kubectl rollout status deployment/demo-app -n ${{ env.K8S_NAMESPACE }}
