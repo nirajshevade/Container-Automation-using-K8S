@@ -43,9 +43,27 @@ jobs:
         version: 'v1.30.0'
 
     - name: Configure kubeconfig
+      shell: bash
       run: |
-        mkdir -p $HOME/.kube
-        echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > $HOME/.kube/config
+        set -euo pipefail
+        mkdir -p "$HOME/.kube"
+        SECRET='${{ secrets.KUBE_CONFIG_DATA }}'
+
+        # Accept both base64-encoded kubeconfig and raw kubeconfig YAML.
+        if echo "$SECRET" | base64 -d > "$HOME/.kube/config" 2>/dev/null; then
+          echo "Using base64-decoded kubeconfig from secret."
+        else
+          printf "%s" "$SECRET" > "$HOME/.kube/config"
+          echo "Using raw kubeconfig from secret."
+        fi
+
+        chmod 600 "$HOME/.kube/config"
+        kubectl config get-contexts >/dev/null
+
+    - name: Verify cluster connectivity
+      run: |
+        kubectl version --client
+        kubectl cluster-info
 
     - name: Deploy namespace resource
       run: |
